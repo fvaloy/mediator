@@ -1,36 +1,27 @@
-using System.Reflection;
+using FluentValidation;
+using MediatorF;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var ft = typeof(IRequestHandler<,>);
-var pt = typeof(IRequestHandler<>);
-var types = AppDomain.CurrentDomain.GetAssemblies()
-        .SelectMany(asm =>
-        {
-            try
-            {
-                return asm.GetTypes();
-            }
-            catch (ReflectionTypeLoadException e)
-            {
-                return e.Types.Where(t => t != null);
-            }
-        }).ToList();
-
-var hts = types
-   .Where(t => !t!.IsInterface && !t.IsAbstract && t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == pt)
-   || !t!.IsInterface && !t.IsAbstract && t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == ft))
-   .ToArray();
-
-foreach (var ht in hts)
-{
-    builder.Services.AddScoped(ht!);
-}
-
 builder.Services.AddHttpContextAccessor();
+Log.Logger = new LoggerConfiguration()
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .CreateLogger();
+builder.Host.UseSerilog();
 
-builder.Services.AddSingleton<IMediator, Mediator>();
+var asm = typeof(Program).Assembly;
+builder.Services.AddValidatorsFromAssembly(asm);
+builder.Services.AddMediatorHandlers(asm);
+builder.Services.AddTransient<IMediator>(p =>
+{
+    var logger = p.GetRequiredService<ILogger<LoggingMediatorDecorator>>();
+    var mediator = p.GetRequiredService<Mediator>();
+    return new ValidatorMediatorDecorator(p, new LoggingMediatorDecorator(logger, mediator));
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -40,109 +31,76 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.MapPost("/command", async ([FromServices] IMediator mediator, CancellationToken ct) => await mediator.Send(new GreetingCommand(), ct));
-app.MapGet("/query", async ([FromServices] IMediator mediator, CancellationToken ct) =>
+app.UseExceptionHandler(cfg =>
 {
-    string str = await mediator.Send(new GreetingStrQuery(), ct);
+    cfg.Run(async ctx =>
+    {
+        var ctxFeature = ctx.Features.Get<IExceptionHandlerFeature>();
+        if (ctxFeature is not null)
+        {
+            switch (ctxFeature.Error)
+            {
+                case MediatorF.ValidationException:
+                    var exception = (MediatorF.ValidationException)ctxFeature.Error;
+                    await Results.UnprocessableEntity(new ValidationProblemDetails(exception.Errors)).ExecuteAsync(ctx);
+                    break;
+                default:
+                    await Results.Problem(detail: ctxFeature.Error.Message).ExecuteAsync(ctx);
+                    break;
+            }
+        }
+    });
+});
+
+app.MapPost("/command",
+    async ([FromServices] IMediator mediator,
+    [FromQuery] string? nombre,
+    CancellationToken ct)
+    => await mediator.Send(new GreetingCommand(nombre), ct));
+
+app.MapGet("/query",
+    async ([FromServices] IMediator mediator,
+    [FromQuery] string? nombre,
+    CancellationToken ct) =>
+{
+    string str = await mediator.Send(new GreetingStrQuery(nombre), ct);
     return Results.Ok(str);
 });
 
 app.Run();
 
-public record GreetingCommand : IRequest;
+public record GreetingCommand(string? Nombre) : IRequest;
 public class GreetingCommandHandler : IRequestHandler<GreetingCommand>
 {
     public Task Handle(GreetingCommand request, CancellationToken ct)
     {
-        Console.WriteLine("Hello world!");
+        Console.WriteLine($"Hello {request.Nombre}!");
         return Task.CompletedTask;
     }
 }
 
-public record GreetingStrQuery : IRequest<string>;
+public class GreetingCommandValidation : AbstractValidator<GreetingCommand>
+{
+    public GreetingCommandValidation()
+    {
+        RuleFor(x => x.Nombre).NotEmpty().WithMessage("Nombre requerido command");
+    }
+}
+
+public class GreetingStrQueryValidation : AbstractValidator<GreetingStrQuery>
+{
+    public GreetingStrQueryValidation()
+    {
+        RuleFor(x => x.Nombre).NotEmpty().WithMessage("Nombre requerido query");
+    }
+}
+
+public record GreetingStrQuery(string? Nombre) : IRequest<string>;
 
 public class GreetingStrQueryHandler : IRequestHandler<GreetingStrQuery, string>
 {
     public Task<string> Handle(GreetingStrQuery request, CancellationToken ct)
     {
-        return Task.FromResult("Hello world!");
-    }
-}
-
-public interface IMediator
-{
-    Task Send(IRequest request, CancellationToken ct);
-    Task<TOut> Send<TOut>(IRequest<TOut> request, CancellationToken ct);
-}
-
-public interface IRequest { }
-
-public interface IRequest<TOut> : IRequest { }
-
-public interface IRequestHandler<T, TOut>
-    where T : IRequest<TOut>
-{
-    Task<TOut> Handle(T request, CancellationToken ct);
-}
-
-public interface IRequestHandler<T>
-    where T : IRequest
-{
-    Task Handle(T request, CancellationToken ct);
-}
-
-public class Mediator : IMediator
-{
-    private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly IDictionary<Type, Type> _procHandlers = new Dictionary<Type, Type>();
-    private readonly IDictionary<Type, Type> _funcHandlers = new Dictionary<Type, Type>();
-
-    public Mediator(IHttpContextAccessor httpContextAccessor)
-    {
-        _httpContextAccessor = httpContextAccessor;
-        var funcT = typeof(IRequestHandler<,>);
-        var procT = typeof(IRequestHandler<>);
-        var ats = AppDomain.CurrentDomain.GetAssemblies()
-                .SelectMany(a =>
-                {
-                    try
-                    {
-                        return a.GetTypes();
-                    }
-                    catch (ReflectionTypeLoadException e)
-                    {
-                        return e.Types.Where(t => t != null);
-                    }
-                }).ToList();
-
-        (Type request, Type handler)[] procHandlers = ats
-           .Where(t => !t!.IsInterface && !t.IsAbstract && t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == procT))
-           .Select(t => (t!.GetInterfaces().First().GenericTypeArguments[0], t))
-           .ToArray();
-
-        (Type request, Type handler)[] funcHandlers = ats
-           .Where(t => !t!.IsInterface && !t.IsAbstract && t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == funcT))
-           .Select(t => (t!.GetInterfaces().First().GenericTypeArguments[0], t))
-           .ToArray();
-
-        foreach ((Type request, Type handler) in procHandlers)
-            _procHandlers[request] = handler;
-
-        foreach ((Type request, Type handler) in funcHandlers)
-            _funcHandlers[request] = handler;
-    }
-
-    public Task Send(IRequest request, CancellationToken ct)
-    {
-        var ht = _procHandlers[request.GetType()];
-        var h = (dynamic)_httpContextAccessor.HttpContext!.RequestServices.GetRequiredService(ht);
-        return h.Handle((dynamic)request, ct);
-    }
-
-    public Task<TOut> Send<TOut>(IRequest<TOut> request, CancellationToken ct)
-    {
-        var ht = _funcHandlers[request.GetType()];
-        var h = (dynamic)_httpContextAccessor.HttpContext!.RequestServices.GetRequiredService(ht);
-        return h.Handle((dynamic)request, ct);
+        return Task.FromResult($"Hello {request.Nombre}!");
     }
 }
