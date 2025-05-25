@@ -35,16 +35,18 @@ public class Mediator(IServiceProvider serviceProvider) : IMediator
     {
         var requestType = request.GetType();
         var handlerType = typeof(IRequestHandler<>).MakeGenericType(requestType);
-        var h = (dynamic)_serviceProvider.GetRequiredService(handlerType);
-        return h!.Handle((dynamic)request, ct);
+        var h = _serviceProvider.GetRequiredService(handlerType);
+        var method = handlerType.GetMethod(nameof(IRequestHandler<IRequest>.Handle));
+        return (Task)method!.Invoke(h, [request, ct])!;
     }
 
     public Task<TOut> Send<TOut>(IRequest<TOut> request, CancellationToken ct)
     {
         var requestType = request.GetType();
         var handlerType = typeof(IRequestHandler<,>).MakeGenericType(requestType, typeof(TOut));
-        var h = (dynamic)_serviceProvider.GetRequiredService(handlerType);
-        return h!.Handle((dynamic)request, ct);
+        var h = _serviceProvider.GetRequiredService(handlerType);
+        var method = handlerType.GetMethod(nameof(IRequestHandler<IRequest>.Handle));
+        return (Task<TOut>)method!.Invoke(h, [request, ct])!;
     }
 }
 
