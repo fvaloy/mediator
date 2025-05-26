@@ -65,8 +65,6 @@ public static class MediatorExtensions
 
         foreach (var (requestT, handlerT) in rhTypes)
         {
-            string keyName = requestT.Name;
-
             var iT = handlerT.GetInterfaces().First(i =>
                 (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>))
                 || (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestHandler<>)));

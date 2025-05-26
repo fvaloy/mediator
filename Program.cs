@@ -16,6 +16,7 @@ builder.Host.UseSerilog();
 var asm = typeof(Program).Assembly;
 builder.Services.AddValidatorsFromAssembly(asm);
 builder.Services.AddMediatorHandlers(asm);
+builder.Services.AddPublisher(asm);
 builder.Services.AddTransient<IMediator>(p =>
 {
     var logger = p.GetRequiredService<ILogger<LoggingMediatorDecorator>>();
@@ -70,12 +71,14 @@ app.MapGet("/query",
 app.Run();
 
 public record GreetingCommand(string? Nombre) : IRequest;
-public class GreetingCommandHandler : IRequestHandler<GreetingCommand>
+public class GreetingCommandHandler(IPublisher publisher) : IRequestHandler<GreetingCommand>
 {
-    public Task Handle(GreetingCommand request, CancellationToken ct)
+    private readonly IPublisher _publisher = publisher;
+
+    public async Task Handle(GreetingCommand request, CancellationToken ct)
     {
         Console.WriteLine($"Hello {request.Nombre}!");
-        return Task.CompletedTask;
+        await _publisher.Publish(new GreetedNotification(), ct);
     }
 }
 
@@ -97,10 +100,44 @@ public class GreetingStrQueryValidation : AbstractValidator<GreetingStrQuery>
 
 public record GreetingStrQuery(string? Nombre) : IRequest<string>;
 
-public class GreetingStrQueryHandler : IRequestHandler<GreetingStrQuery, string>
+public class GreetingStrQueryHandler(IPublisher publisher) : IRequestHandler<GreetingStrQuery, string>
 {
-    public Task<string> Handle(GreetingStrQuery request, CancellationToken ct)
+    private readonly IPublisher _publisher = publisher;
+
+    public async Task<string> Handle(GreetingStrQuery request, CancellationToken ct)
     {
-        return Task.FromResult($"Hello {request.Nombre}!");
+        await _publisher.Publish(new OtherNotification(), ct);
+        return $"Hello {request.Nombre}!";
     }
 }
+
+public record GreetedNotification : INotification;
+public record OtherNotification : INotification;
+
+public class GreetedEvent1NotificationHandler : INotificationHandler<GreetedNotification>
+{
+    public Task Handle(GreetedNotification notification, CancellationToken ct)
+    {
+        Console.WriteLine("Event 1");
+        return Task.CompletedTask;
+    }
+}
+
+public class GreetedEvent2NotificationHandler : INotificationHandler<GreetedNotification>
+{
+    public Task Handle(GreetedNotification notification, CancellationToken ct)
+    {
+        Console.WriteLine("Event 2");
+        return Task.CompletedTask;
+    }
+}
+
+public class OtherNotificationHandler : INotificationHandler<OtherNotification>
+{
+    public Task Handle(OtherNotification notification, CancellationToken ct)
+    {
+        Console.WriteLine("Random Event");
+        return Task.CompletedTask;
+    }
+}
+
