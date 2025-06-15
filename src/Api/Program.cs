@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using FluentValidation;
-using MediatorF;
+using FluentValidation.Results;
+using MediatorKiller;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -41,8 +43,8 @@ app.UseExceptionHandler(cfg =>
         {
             switch (ctxFeature.Error)
             {
-                case MediatorF.ValidationException:
-                    var exception = (MediatorF.ValidationException)ctxFeature.Error;
+                case ValidationException:
+                    var exception = (ValidationException)ctxFeature.Error;
                     await Results.UnprocessableEntity(new ValidationProblemDetails(exception.Errors)).ExecuteAsync(ctx);
                     break;
                 default:
@@ -141,3 +143,74 @@ public class OtherNotificationHandler : INotificationHandler<OtherNotification>
     }
 }
 
+
+public class LoggingMediatorDecorator(
+    ILogger<LoggingMediatorDecorator> logger,
+    IMediator mediator) : IMediatorDecorator
+{
+    private readonly ILogger<LoggingMediatorDecorator> _logger = logger;
+    private readonly IMediator _mediator = mediator;
+
+    public async Task Send(IRequest request, CancellationToken ct)
+    {
+        var stopWatch = Stopwatch.StartNew();
+        _logger.LogInformation("Starting execution for {Request}", request);
+        await _mediator.Send(request, ct);
+        stopWatch.Stop();
+        _logger.LogInformation("Finished execution for {Request} in {ElapsedMilliseconds} ms", request, stopWatch.ElapsedMilliseconds);
+    }
+
+    public async Task<TOut> Send<TOut>(IRequest<TOut> request, CancellationToken ct)
+    {
+        var stopWatch = Stopwatch.StartNew();
+        _logger.LogInformation("Starting execution for {Request}", request);
+        var response = await _mediator.Send(request, ct);
+        stopWatch.Stop();
+        _logger.LogInformation("Finished execution for {Request} in {ElapsedMilliseconds} ms", request, stopWatch.ElapsedMilliseconds);
+        return response;
+    }
+}
+
+public class ValidatorMediatorDecorator(
+    IServiceProvider serviceProvider,
+    IMediator mediator) : IMediator
+{
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
+    private readonly IMediator _mediator = mediator;
+
+    public async Task Send(IRequest request, CancellationToken ct)
+    {
+        await ValidateAsync(request, ct);
+        await _mediator.Send(request, ct);
+    }
+
+    public async Task<TOut> Send<TOut>(IRequest<TOut> request, CancellationToken ct)
+    {
+        await ValidateAsync(request, ct);
+        return await _mediator.Send(request, ct);
+    }
+
+    public async Task ValidateAsync(IRequest request, CancellationToken ct)
+    {
+        var validatorType = typeof(IValidator<>).MakeGenericType(request.GetType());
+        var validators = _serviceProvider.GetServices(validatorType);
+        if (validators.Any())
+        {
+            var context = new ValidationContext<object>(request);
+            var validationResults = await Task.WhenAll(validators.Select(v => ((IValidator)v!).ValidateAsync(context, ct)));
+            var failures = validationResults
+                .Where(vr => vr.Errors.Count != 0)
+                .SelectMany(vr => vr.Errors)
+                .ToList();
+            if (failures.Count != 0)
+                throw new ValidationException(failures);
+        }
+    }
+}
+
+public class ValidationException(IEnumerable<ValidationFailure> failures) : Exception
+{
+    public IDictionary<string, string[]> Errors { get; } = failures
+        .GroupBy(e => e.PropertyName, e => e.ErrorMessage)
+        .ToDictionary(failureGroup => failureGroup.Key, failureGroup => failureGroup.ToArray());
+}

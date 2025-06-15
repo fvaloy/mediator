@@ -1,24 +1,34 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.5.2.0
+VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mediator", "Mediator.csproj", "{524346A4-5CE8-0041-C37B-B20C81785CA5}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5A55949A-D4DB-44EB-81C3-E29E871279D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mediator", "src\Api\Mediator.csproj", "{327EDB87-71A3-463F-A494-95A698D0D86E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatorKiller", "src\MediatorKiller\MediatorKiller.csproj", "{A816164A-8C02-4955-8043-108046C3884B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{524346A4-5CE8-0041-C37B-B20C81785CA5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{524346A4-5CE8-0041-C37B-B20C81785CA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{524346A4-5CE8-0041-C37B-B20C81785CA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{524346A4-5CE8-0041-C37B-B20C81785CA5}.Release|Any CPU.Build.0 = Release|Any CPU
-	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {952B590B-A190-4BAB-B02B-764B9AB3B406}
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{327EDB87-71A3-463F-A494-95A698D0D86E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{327EDB87-71A3-463F-A494-95A698D0D86E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{327EDB87-71A3-463F-A494-95A698D0D86E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{327EDB87-71A3-463F-A494-95A698D0D86E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A816164A-8C02-4955-8043-108046C3884B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A816164A-8C02-4955-8043-108046C3884B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A816164A-8C02-4955-8043-108046C3884B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A816164A-8C02-4955-8043-108046C3884B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{327EDB87-71A3-463F-A494-95A698D0D86E} = {5A55949A-D4DB-44EB-81C3-E29E871279D5}
+		{A816164A-8C02-4955-8043-108046C3884B} = {5A55949A-D4DB-44EB-81C3-E29E871279D5}
 	EndGlobalSection
 EndGlobal
